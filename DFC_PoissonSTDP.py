@@ -90,13 +90,11 @@ def train_input_weights(X, y, w_0, plot=True, dynamic_plot_idxs=[]):
     for idx in range(len(y)):
         input_rate_FF = np.dot(sigmoid(X[idx, :]), w)  # input times linear in-weights
         target_rate = y[idx]  # output label
-
         control_target_rate = target_rates[target_rate]
+
+        # FORWARD, with controller controlling
         output, input_C = control_neuron_rate(input_rate_FF, target_rate, control_target_rate, timesteps=timesteps)
-        # print(" Idx "+str(idx) + " required out: "+ str(target_rate) +
-        #       " controlled out: "+str(round(output[-1],2)) +" control: "+str(input_C[-1])+
-        #       " original output: "+str(round(sigmoid(input_rate_FF),2)))
-        R = len(output) - 1
+        R = len(output) - 1  # number of timesteps the controller had to act?
 
         if R > 0:  # avoids learning if the feedback is already good
             presynaptic_rates = np.vstack([sigmoid(X[idx, :])] * R)

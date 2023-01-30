@@ -51,28 +51,25 @@ def control_neuron_rate(
     output_rate = output_ff
     control_input = 0
     outputs = [output_rate]
-    controler_input = []
-    controler_effect = []
+    controller_input = []
+    controller_effect = []
 
     # noise = np.random.randn(400)*neuron_noise
     # idx_noise = 0
 
     while abs(output_rate - target_rate) > C_precision:
-        # for i in range(400):
         control_input = control_input + 0.1 * (control_target_rate - output_rate)
-        #        print(control_input)
         new_input = input_rate + control_input
-        v_0 = new_input + np.random.randn() * neuron_noise  # noise[idx_noise]
+        v_0 = new_input + np.random.randn() * neuron_noise
         output_rate = sigmoid(v_0)
         outputs.append(output_rate)
-        controler_input.append(control_input)
-        controler_effect.append(output_rate - output_ff)
+        controller_input.append(control_input)
+        controller_effect.append(output_rate - output_ff)
         # We can also simulate neurons with their own dynamics (but it takes longer)
         # output, v_0 = runNeuron_rate(new_input*np.ones(timesteps), init_v=v_0)
         # output_rate = output[-1]
         # outputs.extend(output)
-    # if expand_controler: controler_input = enlarge_vector_interpolation(np.array(controler_input), timesteps)
-    return outputs, controler_effect  # controler_input
+    return outputs, controller_effect  # controller_input
 
 
 def poisson_spikes(firing_rate, timesteps=1):
@@ -92,7 +89,6 @@ def filter_spike_train(spikes, decay_rate=0.8):
 
 
 def STDP(input_spikes, output_spikes, tau_STDP=0.5):
-
     decay_rate = np.exp(-tau_STDP)
     filter_pot = filter_spike_train(input_spikes, decay_rate=decay_rate)
     filter_dep = np.flip(
