@@ -42,9 +42,9 @@ class ControlledLayer(torch.nn.Module):
                 output_spikes = spikify(outputs)
             else:
                 input_spikes, output_spikes = inputs, outputs
-            self.Apre += -self.Apre / self.stdp_tau + input_spikes.float()
-            self.Apost += -self.Apost / self.stdp_tau - output_spikes.float()
-            self.ff.weight.grad -= torch.outer(input_spikes, self.Apost).T + torch.outer(output_spikes, self.Apre)
+            self.Apre = self.Apre * (1 - 1/self.stdp_tau) + input_spikes.float()
+            self.Apost = self.Apost * (1 - 1/self.stdp_tau) + output_spikes.float()
+            self.ff.weight.grad -= -torch.outer(input_spikes, self.Apost).T + torch.outer(output_spikes, self.Apre)
 
         return outputs
 
@@ -88,7 +88,7 @@ class ControlledNetwork(torch.nn.Module):
         outputs = []
 
         while True:
-            output_rate = self(x, self.c)
+            output_rate = self(x, self.c).float()  # TODO float()
             self.evolve_controller(output_rate, control_target_rate)
             outputs.append(output_rate.detach().numpy())
             if abs(output_rate - target_rate) <= precision: break
