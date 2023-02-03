@@ -1,6 +1,7 @@
 import torch
 import matplotlib.pyplot as plt
-from utils import learnAssociationTask, update_weights_rates
+from utils import update_weights_rates
+from sklearn.datasets import make_blobs
 from ControlledLayer import ControlledNetwork
 from tqdm import tqdm
 import numpy as np
@@ -19,10 +20,11 @@ plot = True
 dynamic_plot_idxs = [1, 501, 2001, 9001]
 
 data_noise = 0.1
-total_points = 20000
-X, y = learnAssociationTask(total_points, data_noise=data_noise)
+total_points = 10000
+X, y = make_blobs(total_points, n_features=3, centers=[[0, 1, 0], [1, 0, 0]], cluster_std=data_noise)
+X[:, 2] = 1.
 
-net = ControlledNetwork((3, 1), mode="rate", leak=1., stdp_tau=2.54)
+net = ControlledNetwork((3, 1), mode="spiking", leak=1., stdp_tau=2.54)
 layer = net.layers[0]
 w_0 = np.array([[-5., 5., -5.]])
 layer.ff.weight.data = torch.tensor(w_0).float()
@@ -34,7 +36,6 @@ FF_output_evol = []
 time_to_targ_evol = []
 DW_DH_list = []
 DW_STDP_list = []
-DW_STDPLocal_list = []
 list_output_dynamics = []
 list_controller_dynamics = []
 
@@ -64,8 +65,8 @@ for idx in tqdm(range(len(y))):
 
     R = len(output) - 1  # number of timesteps the controller had to act
     if R > 0:  # avoids learning if the feedback is already good
+        DW_STDP_list.append(-lr * layer.ff.weight.grad.clone().numpy())
         optim.step()
-        DW_STDP_list.append(-lr * net.layers[0].grad.clone().numpy())
 
         # Calculate (but not use) DH update using Pau's functions
         presynaptic_rates = torch.sigmoid(x).unsqueeze(0).expand((R, -1)).numpy()
@@ -98,7 +99,7 @@ DW_STDP_list = np.asarray(DW_STDP_list)
 if plot:
     plt.figure(figsize=(10, 6))
     plt.subplot(231)
-    plt.scatter(X[:, 0], X[:, 1])
+    plt.scatter(X[:, 0], X[:, 1], s=2, c=y)
     plt.title("Input Data")
 
     plt.subplot(232)
@@ -107,9 +108,7 @@ if plot:
     plt.xlabel("Example")
     plt.ylabel("Weights")
 
-    # Benni: Fig 2, panel 1. Normalized to have the maximum at 1
     plt.subplot(233)
-    # max_FF = max(FF_output_evol)
     max_C = max(control_evol)
     max_T = max(time_to_targ_evol)
     control_evol_norm = [c / max_C for (c, s) in zip(control_evol, y) if s == 1]
@@ -123,19 +122,10 @@ if plot:
     plt.title("Loss functions for class 1")
     plt.legend()
 
-    # Benni: Fig 4 A
     plt.subplot(234)
     for i in range(len(list_output_dynamics)):
         str_dynamics = "Dynamics at example " + str(dynamic_plot_idxs[i] - 1)
-        dynamics = list_output_dynamics[i]
-        # init_dynamics, v = runNeuron_rate([0]*initial_steps_plot)
-        init_dynamics = [
-            dynamics[0] + n * neuron_noise / 2
-            for n in np.random.randn(initial_steps_plot)
-        ]
-        list_to_plot = np.vstack((init_dynamics, dynamics))
-        plt.plot(list_to_plot, label=str_dynamics)
-    # plt.plot(output, label="Dynamics at last example")
+        plt.plot(list_output_dynamics[i], label=str_dynamics)
     plt.ylim([0.0, 1])
     plt.xlabel("Time")
     plt.ylabel("Output rate")
@@ -144,15 +134,8 @@ if plot:
     plt.subplot(235)
     for i in range(len(list_output_dynamics)):
         str_dynamics = "Feedback at example " + str(dynamic_plot_idxs[i] - 1)
-        init_ctr = list_controller_dynamics[i]
-        init_control = [
-            init_ctr[0] + n * neuron_noise / 2
-            for n in np.random.randn(initial_steps_plot)
-        ]
-        list_to_plot = np.vstack((init_control, list_controller_dynamics[i]))
-        plt.plot(list_to_plot, label=str_dynamics)
+        plt.plot(list_controller_dynamics[i], label=str_dynamics)
 
-    # plt.plot(input_C, label="Feedback at last example")
     plt.xlabel("Time")
     plt.ylabel("Feedback strength")
     plt.legend()
@@ -160,7 +143,7 @@ if plot:
     plt.subplot(236)
     # STDP vs dendritic error update
     L_errors = int(len(DW_DH_list) / 2)  # when plotting errors after learning we get noise
-    plt.scatter(DW_DH_list[:L_errors], DW_STDP_list[:L_errors], s=2)
+    plt.scatter(DW_STDP_list[:L_errors], DW_DH_list[:L_errors], s=2)
     plt.xlabel("STDP weight update")
     plt.ylabel("Dendritic error update")
 
