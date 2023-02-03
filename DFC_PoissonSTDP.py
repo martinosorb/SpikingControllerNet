@@ -137,7 +137,6 @@ def train_input_weights(X, y, w_0, plot=True, dynamic_plot_idxs=[]):
         plt.show()
 
         # Benni: Fig 2, panel 1. Normalized to have the maximum at 1
-        max_FF = max(FF_output_evol)
         max_C = max(control_evol)
         max_T = max(time_to_targ_evol)
         control_evol_norm = [c / max_C for (c, s) in zip(control_evol, y) if s == 1]

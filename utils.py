@@ -112,7 +112,7 @@ def update_weights_poisson(output_rates, input_rates, learn_rate=0.01):
 def update_weights_rates(output_rates, inputs, learn_rate=0.01):
     T = len(output_rates)
     Doutput = output_rates[1:] - output_rates[: (T - 1)]
-    DW = np.dot(Doutput.T, inputs[0 : (T - 1), :])
+    DW = np.dot(Doutput.T, inputs[0: (T - 1), :])
     return learn_rate * DW  # /T
 
 
