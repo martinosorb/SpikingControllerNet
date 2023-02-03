@@ -12,9 +12,10 @@ class ControlledLayer(torch.nn.Module):
 
         self.leak = leak
         self.threshold = 1.
+        self.fan_out = fan_out
         self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
         self.fb = torch.nn.Linear(controller_dim, fan_out, bias=False)
-        self.fan_out = fan_out
+        torch.nn.init.ones_(self.fb.weight)  # TODO this is ok with one output
         self.reset()
 
         assert mode == "spiking" or mode == "rate"

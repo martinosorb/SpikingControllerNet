@@ -20,15 +20,12 @@ plot = True
 dynamic_plot_idxs = [1, 501, 2001, 9001]
 
 data_noise = 0.1
-total_points = 10000
+total_points = 3000
 X, y = make_blobs(total_points, n_features=3, centers=[[0, 1, 0], [1, 0, 0]], cluster_std=data_noise)
 X[:, 2] = 1.
 
-net = ControlledNetwork((3, 1), mode="spiking", leak=1., stdp_tau=2.54)
-layer = net.layers[0]
-w_0 = np.array([[-5., 5., -5.]])
-layer.ff.weight.data = torch.tensor(w_0).float()
-torch.nn.init.ones_(layer.fb.weight)
+net = ControlledNetwork((3, 3, 1), mode="rate", leak=1., stdp_tau=2.54)
+layer = net.layers[1]
 
 w_evol = []
 control_evol = []
@@ -47,8 +44,8 @@ lr = 0.01
 optim = torch.optim.SGD(
     net.parameters(),
     lr=lr,
-    momentum=0.0,
-    weight_decay=0.0
+    momentum=0.9,
+    weight_decay=1e-4
 )
 
 
