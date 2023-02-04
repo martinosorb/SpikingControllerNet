@@ -3,7 +3,7 @@ import numpy as np
 
 
 def spikify(rate):
-    return rate > torch.rand_like(rate)
+    return (rate > torch.rand_like(rate))*1
 
 
 class ControlledLayer(torch.nn.Module):
@@ -53,7 +53,7 @@ class ControlledLayer(torch.nn.Module):
         spikes = self.v > self.threshold
         self.v[spikes] = 0.
 
-        return spikes
+        return spikes.float()
 
     def _rate_dynamics(self):
         return torch.sigmoid(self.v)
@@ -87,6 +87,9 @@ class ControlledNetwork(torch.nn.Module):
             x = layer(x, c)
         return x
 
+    def feedforward(self, x):
+        return self(x, torch.tensor([0]).float())
+
     def evolve_controller(self, current_output, control_target_rate):
         error = control_target_rate - current_output
         self.c += self.controller_rate * error
@@ -96,7 +99,7 @@ class ControlledNetwork(torch.nn.Module):
         outputs = []
 
         while True:
-            output_rate = self(x, self.c).float()  # TODO float()
+            output_rate = self(x.float(), self.c).float()  # TODO float()
             self.evolve_controller(output_rate, control_target_rate)
             outputs.append(output_rate.detach().numpy())
             if abs(output_rate - target_rate) <= precision: break

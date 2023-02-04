@@ -8,7 +8,7 @@ import numpy as np
 
 
 v_th = 1
-target_rates = [-1, 2]
+target_rates = torch.tensor([-1, 1]).float()
 C_precision = 0.01
 timesteps = 2
 initial_steps_plot = 5
@@ -20,11 +20,12 @@ plot = True
 dynamic_plot_idxs = [1, 501, 2001, 9001]
 
 data_noise = 0.1
-total_points = 3000
-X, y = make_blobs(total_points, n_features=3, centers=[[0, 1, 0], [1, 0, 0]], cluster_std=data_noise)
+total_points = 10000
+epochs = 1
+X, y = make_blobs(total_points, n_features=3, centers=[[1, 0, 0], [0, 1, 0]], cluster_std=data_noise)
 X[:, 2] = 1.
 
-net = ControlledNetwork((3, 3, 1), mode="rate", leak=1., stdp_tau=2.54)
+net = ControlledNetwork((3, 3, 1), mode="spiking", leak=1., stdp_tau=2.54)
 layer = net.layers[1]
 
 w_evol = []
@@ -48,20 +49,21 @@ optim = torch.optim.SGD(
     weight_decay=1e-4
 )
 
-
 # loop over datapoints
-for idx in tqdm(range(len(y))):
-    target_rate = y[idx]
-    x = X[idx]
-    control_target_rate = target_rates[target_rate]
-    optim.zero_grad()
+for epoch in range(epochs):
+    for idx in tqdm(range(len(y))):
+        target_rate = y[idx]
+        x = X[idx]
+        
+        control_target_rate = target_rates[target_rate]
+        optim.zero_grad()
 
-    # FORWARD, with controller controlling
-    output, input_C = net.evolve_to_convergence(
-        x, target_rate, control_target_rate, precision=C_precision)
+        # FORWARD, with controller controlling
+        output, input_C = net.evolve_to_convergence(
+            x, target_rate, control_target_rate, precision=C_precision)
 
-    R = len(output) - 1  # number of timesteps the controller had to act
-    if R > 0:  # avoids learning if the feedback is already good
+        R = len(output) - 1  # number of timesteps the controller had to act
+        # if R > 0:  # avoids learning if the feedback is already good
         DW_STDP_list.append(-lr * layer.ff.weight.grad.clone().numpy())
         optim.step()
 
@@ -74,23 +76,36 @@ for idx in tqdm(range(len(y))):
         # Dw_STDP = update_weights_poisson(output[:-1], presynaptic_rates)
         # DW_STDP_list.append(Dw_STDP)
 
-    count_1 += y[idx]
-    if count_1 == dynamic_plot_idxs[next_dyn_plot_idx]:
-        list_output_dynamics.append(output[1:])
-        list_controller_dynamics.append(input_C)
-        next_dyn_plot_idx = (next_dyn_plot_idx + 1) % len(dynamic_plot_idxs)
+        count_1 += y[idx]
+        if count_1 == dynamic_plot_idxs[next_dyn_plot_idx]:
+            list_output_dynamics.append(output[1:])
+            list_controller_dynamics.append(input_C)
+            next_dyn_plot_idx = (next_dyn_plot_idx + 1) % len(dynamic_plot_idxs)
 
-    w_evol.append(layer.ff.weight.data.squeeze().clone().numpy())
-    FF_output_evol.append(output[0])
-    time_to_targ_evol.append(len(input_C))
+        w_evol.append(layer.ff.weight.data.squeeze().clone().numpy())
+        FF_output_evol.append(output[0])
+        time_to_targ_evol.append(len(input_C))
 
-    if len(input_C) > 1:
-        control_evol.append(input_C[-1])
-    else:
-        control_evol.append(0)
+        if len(input_C) > 1:
+            control_evol.append(input_C[-1])
+        else:
+            control_evol.append(0)
 
 DW_DH_list = np.asarray(DW_DH_list)
 DW_STDP_list = np.asarray(DW_STDP_list)
+
+# Print acc
+acc = 0
+num_samples = len(y)
+for idx in range(num_samples):
+    x = X[idx]
+    target = torch.tensor([y[idx]]).float()
+    # l1 = net.layers[0](x, torch.tensor([0]).float())
+    # out = net.layers[1](l1, torch.tensor([0]).float())
+    out = net.feedforward(x)
+    acc += out == target
+
+print("Accuracy: ", (acc/num_samples).item())
 
 
 if plot:
