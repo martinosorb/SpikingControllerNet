@@ -16,8 +16,6 @@ neuron_noise = 0.
 plot_path = "./plots/"
 plot = True
 
-dynamic_plot_idxs = [1, 501, 2001, 9001]
-
 data_noise = 0.1
 total_points = 10000
 epochs = 1
@@ -62,24 +60,12 @@ for epoch in range(epochs):
             x, target_rate, control_target_rate, precision=C_precision)
 
         R = len(output) - 1  # number of timesteps the controller had to act
-        # if R > 0:  # avoids learning if the feedback is already good
-        DW_STDP_list.append(-lr * layer.ff.weight.grad.clone().numpy())
         optim.step()
 
         # Calculate (but not use) DH update using Pau's functions
         presynaptic_rates = torch.sigmoid(x).unsqueeze(0).expand((R, -1)).numpy()
         Dw_DH = update_weights_rates(output[:-1], presynaptic_rates)
         DW_DH_list.append(Dw_DH)
-
-        # # Pau's version of STDP
-        # Dw_STDP = update_weights_poisson(output[:-1], presynaptic_rates)
-        # DW_STDP_list.append(Dw_STDP)
-
-        count_1 += y[idx]
-        if count_1 == dynamic_plot_idxs[next_dyn_plot_idx]:
-            list_output_dynamics.append(output[1:])
-            list_controller_dynamics.append(input_C)
-            next_dyn_plot_idx = (next_dyn_plot_idx + 1) % len(dynamic_plot_idxs)
 
         w_evol.append(layer.ff.weight.data.squeeze().clone().numpy())
         FF_output_evol[idx] = output[0]
@@ -102,53 +88,29 @@ print("Accuracy: ", (acc / total_points))
 
 
 if plot:
-    plt.figure(figsize=(10, 6))
-    plt.subplot(231)
-    plt.scatter(X[:, 0], X[:, 1], s=2, c=y)
-    plt.title("Input Data")
+    plt.figure(figsize=(10, 4))
 
-    plt.subplot(232)
+    plt.subplot(131)
     plt.plot(w_evol)
     plt.legend(["$w_{A->C}$", "$w_{B->C}$", "$w_{bias}$"])
     plt.xlabel("Example")
     plt.ylabel("Weights")
 
-    plt.subplot(233)
+    plt.subplot(132)
     control_evol_norm = control_evol / np.max(control_evol)
     FF_output_evol_norm = (y - FF_output_evol)**2
-    time_to_output_evol_norm = time_to_targ_evol / np.max(time_to_targ_evol)
     plt.plot(control_evol_norm, label="Feedback")
     plt.plot(FF_output_evol_norm, label="MSE Error")
-    plt.plot(time_to_output_evol_norm, label="Time to target output")
     plt.xlabel("Sample")
     plt.ylabel("Loss")
     plt.title("Loss functions")
     plt.legend()
 
-    plt.subplot(234)
-    for i in range(len(list_output_dynamics)):
-        str_dynamics = "Dynamics at example " + str(dynamic_plot_idxs[i] - 1)
-        plt.plot(list_output_dynamics[i], label=str_dynamics)
-    plt.ylim([0.0, 1])
-    plt.xlabel("Time")
-    plt.ylabel("Output rate")
+    plt.subplot(133)
+    plt.plot(time_to_targ_evol, label="Time to target output")
+    plt.xlabel("Sample")
+    plt.ylabel("N. timesteps")
+    plt.title("Time to target output")
     plt.legend()
 
-    plt.subplot(235)
-    for i in range(len(list_output_dynamics)):
-        str_dynamics = "Feedback at example " + str(dynamic_plot_idxs[i] - 1)
-        plt.plot(list_controller_dynamics[i], label=str_dynamics)
-
-    plt.xlabel("Time")
-    plt.ylabel("Feedback strength")
-    plt.legend()
-
-    plt.subplot(236)
-    # STDP vs dendritic error update
-    L_errors = int(len(DW_DH_list) / 2)  # when plotting errors after learning we get noise
-    plt.scatter(DW_STDP_list[:L_errors], DW_DH_list[:L_errors], s=2)
-    plt.xlabel("STDP weight update")
-    plt.ylabel("Dendritic error update")
-
-    plt.savefig(plot_path + "all_plots.pdf", bbox_inches="tight", format="eps")
     plt.show()
