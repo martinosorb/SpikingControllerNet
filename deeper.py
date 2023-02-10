@@ -10,7 +10,7 @@ import numpy as np
 
 v_th = 1
 target_rates = torch.tensor([0, 1]).float()
-C_precision = 0.09
+C_precision = 0.01
 
 plot_path = "./plots/"
 plot = True
@@ -23,25 +23,28 @@ dataloader = torch.utils.data.DataLoader(dataset)
 dataloader_test = torch.utils.data.DataLoader(dataset_test)
 n_data = len(dataset)
 
-net = ControlledNetwork((784, 10), mode="spiking", leak=1., stdp_tau=2.54)
+net = ControlledNetwork((784, 10), mode="spiking", leak=1., stdp_tau=2.54, controller_rate=0.2)
 layer = net.layers[0]
 
 w_evol = []
-control_evol = np.zeros(n_data)
-FF_output_evol = np.empty(n_data)
-time_to_targ_evol = np.empty(n_data)
+MAX_SAMPLES = 10000
+control_evol = np.zeros(MAX_SAMPLES)
+FF_output_evol = np.empty(MAX_SAMPLES)
+time_to_targ_evol = np.empty(MAX_SAMPLES)
 
-lr = 0.01
+lr = 0.001
 optim = torch.optim.SGD(
     net.parameters(),
     lr=lr,
-    momentum=0.9,
-    weight_decay=1e-4
+    momentum=0.1,
+    weight_decay=1e-6
 )
 
 # loop over datapoints
 for epoch in range(epochs):
     for idx, (x, y) in enumerate(tqdm(dataloader)):
+        if idx >= MAX_SAMPLES: break
+
         target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
         x = x.squeeze()
         control_target_rate = target_rates[target]
@@ -57,7 +60,6 @@ for epoch in range(epochs):
         time_to_targ_evol[idx] = len(input_C)
         # if len(input_C) > 1:
         #     control_evol[idx] = input_C[-1].item()
-        break
 
 
 # Print acc
@@ -65,9 +67,10 @@ acc = 0
 for x, y in dataloader_test:
     target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
     out = net.feedforward(x.squeeze())
-    acc += (out == target).sum() / len(out)
+    predicted_label = torch.max(out, dim=-1)[1]
+    acc += predicted_label == y
 
-print("Test Accuracy: ", (acc / n_data))
+print("Test Accuracy: ", (acc / len(dataset_test)))
 
 
 if plot:
