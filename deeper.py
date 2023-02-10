@@ -8,43 +8,56 @@ from tqdm import tqdm
 import numpy as np
 
 
-v_th = 1
-target_rates = torch.tensor([0, 1]).float()
-C_precision = 0.01
+target_rates = torch.tensor([0., 1.])
+controller_precision = 0.01
+controller_rate = 0.1
+epochs = 1
+leak = 1.0
+stdp_tau = 2.54
+lr = 0.001
+mom = 0.1
+wd = 1e-6
+mode = "spiking"
+layer_sizes = (784, 10)
 
 plot_path = "./plots/"
 plot = False
 plot_receptive = True
+MAX_SAMPLES = 60000
 
-epochs = 1
+
 transform = tr.Compose([tr.ToTensor(), torch.flatten])
 dataset = MNIST("./data/", train=True, transform=transform)
 dataset_test = MNIST("./data/", train=False, transform=transform)
 dataloader = torch.utils.data.DataLoader(dataset)
 dataloader_test = torch.utils.data.DataLoader(dataset_test)
-n_data = len(dataset)
 
-net = ControlledNetwork((784, 10), mode="spiking", leak=1., stdp_tau=2.54, controller_rate=0.1)
+net = ControlledNetwork(
+    layer_sizes,
+    mode=mode,
+    leak=leak,
+    stdp_tau=stdp_tau,
+    controller_rate=controller_rate
+)
 layer = net.layers[0]
 
 w_evol = []
-MAX_SAMPLES = 60000
 control_evol = np.zeros(MAX_SAMPLES)
 FF_output_evol = np.empty(MAX_SAMPLES)
 time_to_targ_evol = np.empty(MAX_SAMPLES)
 
-lr = 0.001
 optim = torch.optim.SGD(
     net.parameters(),
     lr=lr,
-    momentum=0.1,
-    weight_decay=1e-6
+    momentum=mom,
+    weight_decay=wd,
 )
 
 # loop over datapoints
 for epoch in range(epochs):
     for idx, (x, y) in enumerate(tqdm(dataloader)):
-        if idx >= MAX_SAMPLES: break
+        if idx >= MAX_SAMPLES:
+            break
 
         target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
         x = x.squeeze()
@@ -52,7 +65,7 @@ for epoch in range(epochs):
 
         # FORWARD, with controller controlling
         output, input_C = net.evolve_to_convergence(
-            x, target, control_target_rate, precision=C_precision)
+            x, target, control_target_rate, precision=controller_precision)
         optim.step()
         optim.zero_grad()
 
@@ -77,12 +90,6 @@ print("Test Accuracy: ", (acc / len(dataset_test)))
 if plot:
     plt.figure(figsize=(10, 4))
 
-    # plt.subplot(131)
-    # plt.plot(w_evol)
-    # plt.legend(["$w_{A->C}$", "$w_{B->C}$", "$w_{bias}$"])
-    # plt.xlabel("Example")
-    # plt.ylabel("Weights")
-
     plt.subplot(132)
     control_evol_norm = control_evol / np.max(control_evol)
     FF_output_evol_norm = (y - FF_output_evol)**2
@@ -103,10 +110,11 @@ if plot:
     plt.show()
 
 if plot_receptive:
-    fig, axs = plt.subplots(nrows=2, ncols=5, figsize=(16,6))
-    
+    fig, axs = plt.subplots(nrows=2, ncols=5, figsize=(16, 6))
+
     for row in range(2):
         for col in range(5):
-            axs[row][col].imshow(layer.ff.weight[row*5+col].view(28,28).detach())
+            w = layer.ff.weight[row * 5 + col]
+            axs[row][col].imshow(w.view(28, 28).detach())
 
     plt.show()
