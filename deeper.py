@@ -1,42 +1,35 @@
 import torch
+from torchvision.datasets import MNIST
+import torchvision.transforms as tr
+
 import matplotlib.pyplot as plt
-from utils import update_weights_rates
-from sklearn.datasets import make_blobs
 from ControlledLayer import ControlledNetwork
 from tqdm import tqdm
 import numpy as np
 
 
 v_th = 1
-target_rates = torch.tensor([-1, 1]).float()
-C_precision = 0.01
-initial_steps_plot = 5
-neuron_noise = 0.
+target_rates = torch.tensor([0, 1]).float()
+C_precision = 0.09
 
 plot_path = "./plots/"
 plot = True
 
-data_noise = 0.1
-total_points = 10000
 epochs = 1
-X, y = make_blobs(total_points, n_features=3, centers=[[1, 0, 0], [0, 1, 0]], cluster_std=data_noise)
-X[:, 2] = 1.
+transform = tr.Compose([tr.ToTensor(), torch.flatten])
+dataset = MNIST("./data/", train=True, transform=transform)
+dataset_test = MNIST("./data/", train=False, transform=transform)
+dataloader = torch.utils.data.DataLoader(dataset)
+dataloader_test = torch.utils.data.DataLoader(dataset_test)
+n_data = len(dataset)
 
-net = ControlledNetwork((3, 3, 1), mode="spiking", leak=1., stdp_tau=2.54)
-layer = net.layers[1]
+net = ControlledNetwork((784, 10), mode="spiking", leak=1., stdp_tau=2.54)
+layer = net.layers[0]
 
 w_evol = []
-control_evol = np.zeros(total_points)
-FF_output_evol = np.empty(total_points)
-time_to_targ_evol = np.empty(total_points)
-DW_DH_list = []
-DW_STDP_list = []
-list_output_dynamics = []
-list_controller_dynamics = []
-
-count_1 = 0
-next_dyn_plot_idx = 0
-X = torch.from_numpy(X).float()
+control_evol = np.zeros(n_data)
+FF_output_evol = np.empty(n_data)
+time_to_targ_evol = np.empty(n_data)
 
 lr = 0.01
 optim = torch.optim.SGD(
@@ -48,53 +41,43 @@ optim = torch.optim.SGD(
 
 # loop over datapoints
 for epoch in range(epochs):
-    for idx in tqdm(range(total_points)):
-        target_rate = y[idx]
-        x = X[idx]
-
-        control_target_rate = target_rates[target_rate]
-        optim.zero_grad()
+    for idx, (x, y) in enumerate(tqdm(dataloader)):
+        target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
+        x = x.squeeze()
+        control_target_rate = target_rates[target]
 
         # FORWARD, with controller controlling
         output, input_C = net.evolve_to_convergence(
-            x, target_rate, control_target_rate, precision=C_precision)
-
-        R = len(output) - 1  # number of timesteps the controller had to act
+            x, target, control_target_rate, precision=C_precision)
         optim.step()
-
-        # Calculate (but not use) DH update using Pau's functions
-        presynaptic_rates = torch.sigmoid(x).unsqueeze(0).expand((R, -1)).numpy()
-        Dw_DH = update_weights_rates(output[:-1], presynaptic_rates)
-        DW_DH_list.append(Dw_DH)
+        optim.zero_grad()
 
         w_evol.append(layer.ff.weight.data.squeeze().clone().numpy())
-        FF_output_evol[idx] = output[0]
+        FF_output_evol[idx] = output[0].mean()
         time_to_targ_evol[idx] = len(input_C)
-        if len(input_C) > 1:
-            control_evol[idx] = input_C[-1].item()
+        # if len(input_C) > 1:
+        #     control_evol[idx] = input_C[-1].item()
+        break
 
-
-DW_DH_list = np.asarray(DW_DH_list)
-DW_STDP_list = np.asarray(DW_STDP_list)
 
 # Print acc
 acc = 0
-for idx in range(total_points):
-    x = X[idx]
-    out = net.feedforward(x)
-    acc += out.item() == y[idx]
+for x, y in dataloader_test:
+    target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
+    out = net.feedforward(x.squeeze())
+    acc += (out == target).sum() / len(out)
 
-print("Accuracy: ", (acc / total_points))
+print("Test Accuracy: ", (acc / n_data))
 
 
 if plot:
     plt.figure(figsize=(10, 4))
 
-    plt.subplot(131)
-    plt.plot(w_evol)
-    plt.legend(["$w_{A->C}$", "$w_{B->C}$", "$w_{bias}$"])
-    plt.xlabel("Example")
-    plt.ylabel("Weights")
+    # plt.subplot(131)
+    # plt.plot(w_evol)
+    # plt.legend(["$w_{A->C}$", "$w_{B->C}$", "$w_{bias}$"])
+    # plt.xlabel("Example")
+    # plt.ylabel("Weights")
 
     plt.subplot(132)
     control_evol_norm = control_evol / np.max(control_evol)

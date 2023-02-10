@@ -15,7 +15,7 @@ class ControlledLayer(torch.nn.Module):
         self.fan_out = fan_out
         self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
         self.fb = torch.nn.Linear(controller_dim, fan_out, bias=False)
-        torch.nn.init.ones_(self.fb.weight)  # TODO this is ok with one output
+        torch.nn.init.eye_(self.fb.weight)  # TODO this is ok with one output
         self.reset()
 
         assert mode == "spiking" or mode == "rate"
@@ -70,13 +70,13 @@ class ControlledNetwork(torch.nn.Module):
     def __init__(self, layers, mode="spiking", leak=0.9, controller_rate=0.1, stdp_tau=False):
         super().__init__()
         self.layers = []
-        n_classes = layers[-1]
+        controller_dim = layers[-1]
         self.controller_rate = controller_rate
-        self.c = torch.zeros(n_classes)
+        self.c = torch.zeros(controller_dim)
 
         for fan_in, fan_out in zip(layers[:-1], layers[1:]):
             layer = ControlledLayer(
-                fan_in, fan_out, controller_dim=n_classes,
+                fan_in, fan_out, controller_dim=controller_dim,
                 mode=mode, leak=leak, stdp_tau=stdp_tau)
             self.layers.append(layer)
 
@@ -88,7 +88,7 @@ class ControlledNetwork(torch.nn.Module):
         return x
 
     def feedforward(self, x):
-        return self(x, torch.tensor([0]).float())
+        return self(x, torch.zeros_like(self.c))
 
     def evolve_controller(self, current_output, control_target_rate):
         error = control_target_rate - current_output
@@ -102,7 +102,7 @@ class ControlledNetwork(torch.nn.Module):
             output_rate = self(x.float(), self.c).float()  # TODO float()
             self.evolve_controller(output_rate, control_target_rate)
             outputs.append(output_rate.detach().numpy())
-            if abs(output_rate - target_rate) <= precision: break
+            if (output_rate - target_rate).abs().mean() <= precision: break
 
         outputs = np.asarray(outputs)
         controller_effect = (outputs - outputs[0])[1:]
