@@ -13,7 +13,8 @@ target_rates = torch.tensor([0, 1]).float()
 C_precision = 0.01
 
 plot_path = "./plots/"
-plot = True
+plot = False
+plot_receptive = True
 
 epochs = 1
 transform = tr.Compose([tr.ToTensor(), torch.flatten])
@@ -23,11 +24,11 @@ dataloader = torch.utils.data.DataLoader(dataset)
 dataloader_test = torch.utils.data.DataLoader(dataset_test)
 n_data = len(dataset)
 
-net = ControlledNetwork((784, 10), mode="spiking", leak=1., stdp_tau=2.54, controller_rate=0.2)
+net = ControlledNetwork((784, 10), mode="spiking", leak=1., stdp_tau=2.54, controller_rate=0.1)
 layer = net.layers[0]
 
 w_evol = []
-MAX_SAMPLES = 10000
+MAX_SAMPLES = 60000
 control_evol = np.zeros(MAX_SAMPLES)
 FF_output_evol = np.empty(MAX_SAMPLES)
 time_to_targ_evol = np.empty(MAX_SAMPLES)
@@ -98,5 +99,14 @@ if plot:
     plt.ylabel("N. timesteps")
     plt.title("Time to target output")
     plt.legend()
+
+    plt.show()
+
+if plot_receptive:
+    fig, axs = plt.subplots(nrows=2, ncols=5, figsize=(16,6))
+    
+    for row in range(2):
+        for col in range(5):
+            axs[row][col].imshow(layer.ff.weight[row*5+col].view(28,28).detach())
 
     plt.show()
