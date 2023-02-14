@@ -1,10 +1,9 @@
 import torch
-import numpy as np
 import pytorch_lightning as pl
 
 
 def spikify(rate):
-    return (rate > torch.rand_like(rate))*1
+    return (rate > torch.rand_like(rate)) * 1.
 
 
 class ControlledLayer(torch.nn.Module):
@@ -115,8 +114,10 @@ class ControlledNetwork(pl.LightningModule):
             output_rate = self(x.float(), self.c).float()  # TODO float()
             self.evolve_controller(output_rate, control_target_rate)
             n_iter += 1
-            if n_iter == 1: first_output = output_rate.detach()
-            if (output_rate - target_rate).abs().mean() <= self.ctr_precision: break
+            if n_iter == 1:
+                first_output = output_rate.detach()
+            if (output_rate - target_rate).abs().mean() <= self.ctr_precision:
+                break
 
         return first_output, n_iter
 
