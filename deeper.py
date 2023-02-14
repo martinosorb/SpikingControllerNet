@@ -37,7 +37,8 @@ net = ControlledNetwork(
     mode=mode,
     leak=leak,
     stdp_tau=stdp_tau,
-    controller_rate=controller_rate
+    controller_rate=controller_rate,
+    controller_precision=controller_precision,
 )
 layer = net.layers[0]
 
@@ -64,14 +65,14 @@ for epoch in range(epochs):
         control_target_rate = target_rates[target]
 
         # FORWARD, with controller controlling
-        output, input_C = net.evolve_to_convergence(
-            x, target, control_target_rate, precision=controller_precision)
+        first_output, n_steps = net.evolve_to_convergence(
+            x, target, control_target_rate)
         optim.step()
         optim.zero_grad()
 
         w_evol.append(layer.ff.weight.data.squeeze().clone().numpy())
-        FF_output_evol[idx] = output[0].mean()
-        time_to_targ_evol[idx] = len(input_C)
+        FF_output_evol[idx] = torch.nn.functional.mse_loss(first_output, target)
+        time_to_targ_evol[idx] = n_steps
         # if len(input_C) > 1:
         #     control_evol[idx] = input_C[-1].item()
 
@@ -91,10 +92,9 @@ if plot:
     plt.figure(figsize=(10, 4))
 
     plt.subplot(132)
-    control_evol_norm = control_evol / np.max(control_evol)
-    FF_output_evol_norm = (y - FF_output_evol)**2
-    plt.plot(control_evol_norm, label="Feedback")
-    plt.plot(FF_output_evol_norm, label="MSE Error")
+    # control_evol_norm = control_evol / np.max(control_evol)
+    # plt.plot(control_evol_norm, label="Feedback")
+    plt.plot(FF_output_evol, label="MSE Error")
     plt.xlabel("Sample")
     plt.ylabel("Loss")
     plt.title("Loss functions")

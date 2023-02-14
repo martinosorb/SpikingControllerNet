@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import pytorch_lightning as pl
 
 
 def spikify(rate):
@@ -66,12 +67,24 @@ class ControlledLayer(torch.nn.Module):
         return self.ff.weight.grad
 
 
-class ControlledNetwork(torch.nn.Module):
-    def __init__(self, layers, mode="spiking", leak=0.9, controller_rate=0.1, stdp_tau=False):
+class ControlledNetwork(pl.LightningModule):
+    def __init__(
+        self,
+        layers,
+        mode="spiking",
+        leak=0.9,
+        controller_rate=0.1,
+        stdp_tau=False,
+        controller_precision=0.01,
+        target_rates=[0., 1.],
+    ):
         super().__init__()
+        self.controller_rate = controller_rate
+        self.ctr_precision = controller_precision
+        self.target_rates = torch.tensor(target_rates).float()
+
         self.layers = []
         controller_dim = layers[-1]
-        self.controller_rate = controller_rate
         self.c = torch.zeros(controller_dim)
 
         for fan_in, fan_out in zip(layers[:-1], layers[1:]):
@@ -94,19 +107,18 @@ class ControlledNetwork(torch.nn.Module):
         error = control_target_rate - current_output
         self.c += self.controller_rate * error
 
-    def evolve_to_convergence(self, x, target_rate, control_target_rate, precision=0.01):
+    def evolve_to_convergence(self, x, target_rate, control_target_rate):
         self.reset()
-        outputs = []
+        n_iter = 0
 
         while True:
             output_rate = self(x.float(), self.c).float()  # TODO float()
             self.evolve_controller(output_rate, control_target_rate)
-            outputs.append(output_rate.detach().numpy())
-            if (output_rate - target_rate).abs().mean() <= precision: break
+            n_iter += 1
+            if n_iter == 1: first_output = output_rate.detach()
+            if (output_rate - target_rate).abs().mean() <= self.ctr_precision: break
 
-        outputs = np.asarray(outputs)
-        controller_effect = (outputs - outputs[0])[1:]
-        return outputs, controller_effect
+        return first_output, n_iter
 
     def parameters(self, recurse: bool = True):
         return (l.ff.weight for l in self.layers)
@@ -115,3 +127,21 @@ class ControlledNetwork(torch.nn.Module):
         self.c.zero_()
         for layer in self.layers:
             layer.reset()
+
+    def training_step(self, data, idx):
+        optim = self.optimizers().optimizer
+
+        x, y = data
+        target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
+        x = x.squeeze()
+        control_target_rate = self.target_rates[target]
+
+        # FORWARD, with controller controlling
+        first_output, n_iter = self.evolve_to_convergence(
+            x, target, control_target_rate)
+        optim.step()
+        optim.zero_grad()
+
+        ffw_mse = torch.nn.functional.mse_loss(first_output, target)
+        self.log("ffw_mse", ffw_mse)
+        self.log("time_to_target", n_iter)

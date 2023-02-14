@@ -1,0 +1,26 @@
+model:
+  layers:
+    - 784
+    - 10
+  mode: "spiking"
+  leak: 1.0
+  stdp_tau: 2.54
+  controller_rate: 0.1
+  controller_precision: 0.01
+  target_rates:
+    - 0.0
+    - 1.0
+
+optimizer:
+  class_path: torch.optim.SGD
+  init_args:
+    lr: 0.001
+    momentum: 0.1
+    weight_decay: 1e-6
+
+
+data:
+  batch_size: 1
+
+trainer:
+  max_epochs: 1
