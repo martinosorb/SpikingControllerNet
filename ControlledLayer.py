@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import pytorch_lightning as pl
 
 
@@ -116,7 +117,7 @@ class ControlledNetwork(pl.LightningModule):
             n_iter += 1
             if n_iter == 1:
                 first_output = output_rate.detach()
-            if (output_rate - target_rate).abs().mean() <= self.ctr_precision:
+            if F.l1_loss(output_rate, target_rate) <= self.ctr_precision:
                 break
 
         return first_output, n_iter
@@ -133,7 +134,7 @@ class ControlledNetwork(pl.LightningModule):
         optim = self.optimizers().optimizer
 
         x, y = data
-        target = torch.nn.functional.one_hot(y, num_classes=10).squeeze()
+        target = F.one_hot(y, num_classes=10).squeeze()
         x = x.squeeze()
         control_target_rate = self.target_rates[target]
 
@@ -143,6 +144,6 @@ class ControlledNetwork(pl.LightningModule):
         optim.step()
         optim.zero_grad()
 
-        ffw_mse = torch.nn.functional.mse_loss(first_output, target)
+        ffw_mse = F.mse_loss(first_output, target)
         self.log("ffw_mse", ffw_mse)
         self.log("time_to_target", n_iter)
