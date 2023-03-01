@@ -16,7 +16,6 @@ class ControlledLayer(torch.nn.Module):
         self.fan_out = fan_out
         self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
         self.fb = torch.nn.Linear(controller_dim, fan_out, bias=False)
-        torch.nn.init.eye_(self.fb.weight)  # TODO this is ok with one output
         self.reset()
 
         assert mode == "spiking" or mode == "rate"
@@ -37,8 +36,6 @@ class ControlledLayer(torch.nn.Module):
         outputs = self.dynamics()
 
         if self.stdp_decay:
-            if self.ff.weight.grad is None:  # TODO
-                self.ff.weight.grad = torch.zeros_like(self.ff.weight)
             if self.mode == "rate":
                 input_spikes = spikify(inputs)
                 output_spikes = spikify(outputs)
@@ -60,6 +57,8 @@ class ControlledLayer(torch.nn.Module):
         return torch.sigmoid(self.v)
 
     def reset(self):
+        if self.ff.weight.grad is None:
+            self.ff.weight.grad = torch.zeros_like(self.ff.weight)
         self.v = torch.zeros(self.fan_out)
 
     @property
@@ -93,7 +92,16 @@ class ControlledNetwork(pl.LightningModule):
                 mode=mode, leak=leak, stdp_tau=stdp_tau)
             self.layers.append(layer)
 
+        self.initialize_as_dfc()
         self.seq = torch.nn.Sequential(*self.layers)  # so that pytorch registers them
+
+    def initialize_as_dfc(self):
+        # last layer has Q=identity
+        curr_w = torch.eye(len(self.c))
+        with torch.no_grad():
+            for layer in self.layers[::-1]:  # layers backwards
+                layer.fb.weight.data = curr_w
+                curr_w = layer.ff.weight.T @ curr_w
 
     def forward(self, x, c):
         for layer in self.layers:
@@ -112,7 +120,7 @@ class ControlledNetwork(pl.LightningModule):
         n_iter = 0
 
         while True:
-            output_rate = self(x.float(), self.c).float()  # TODO float()
+            output_rate = self(x.float(), self.c)
             self.evolve_controller(output_rate, control_target_rate)
             n_iter += 1
             if n_iter == 1:
