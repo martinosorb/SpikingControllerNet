@@ -3,8 +3,8 @@ model:
     - 784
     - 10
   mode: "spiking"
-  leak: 1.0
-  stdp_tau: 2.54
+  tau_mem: 1.
+  tau_stdp: 2.54
   controller_rate: 0.1
   controller_precision: 0.01
   target_rates:

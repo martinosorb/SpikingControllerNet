@@ -24,7 +24,7 @@ total_points = 10000
 X, y = make_blobs(total_points, n_features=3, centers=[[0, 1, 0], [1, 0, 0]], cluster_std=data_noise)
 X[:, 2] = 1.
 
-net = ControlledNetwork((3, 1), mode="rate", leak=1., stdp_tau=2.54)
+net = ControlledNetwork((3, 1), mode="rate", tau_mem=1., tau_stdp=2.54)
 layer = net.layers[0]
 
 w_evol = []

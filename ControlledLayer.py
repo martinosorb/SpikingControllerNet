@@ -8,10 +8,10 @@ def spikify(rate):
 
 
 class ControlledLayer(torch.nn.Module):
-    def __init__(self, fan_in, fan_out, controller_dim, mode="spiking", leak=0.9, stdp_tau=False):
+    def __init__(self, fan_in, fan_out, controller_dim, mode="spiking", tau_mem=10., tau_stdp=False):
         super().__init__()
 
-        self.leak = leak
+        self.leak = 1. / tau_mem
         self.threshold = 1.
         self.fan_out = fan_out
         self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
@@ -22,7 +22,7 @@ class ControlledLayer(torch.nn.Module):
         self.mode = mode
         self.dynamics = self._spiking_dynamics if mode == "spiking" else self._rate_dynamics
 
-        self.stdp_decay = 1 - 1 / stdp_tau if stdp_tau else False
+        self.stdp_decay = 1 - 1 / tau_stdp if tau_stdp else False
         if self.stdp_decay:
             self.Apre = torch.zeros(fan_in)
             self.Apost = torch.zeros(fan_out)
@@ -71,9 +71,9 @@ class ControlledNetwork(pl.LightningModule):
         self,
         layers,
         mode="spiking",
-        leak=0.9,
+        tau_mem=10.,
         controller_rate=0.1,
-        stdp_tau=False,
+        tau_stdp=False,
         controller_precision=0.01,
         target_rates=[0., 1.],
     ):
@@ -89,7 +89,7 @@ class ControlledNetwork(pl.LightningModule):
         for fan_in, fan_out in zip(layers[:-1], layers[1:]):
             layer = ControlledLayer(
                 fan_in, fan_out, controller_dim=controller_dim,
-                mode=mode, leak=leak, stdp_tau=stdp_tau)
+                mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp)
             self.layers.append(layer)
 
         self.initialize_as_dfc()

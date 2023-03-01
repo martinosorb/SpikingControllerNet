@@ -12,8 +12,8 @@ target_rates = torch.tensor([0., 1.])
 controller_precision = 0.01
 controller_rate = 0.1
 epochs = 1
-leak = 1.0
-stdp_tau = 2.54
+tau_mem = 1.
+tau_stdp = 2.54
 lr = 0.001
 mom = 0.1
 wd = 1e-6
@@ -35,8 +35,8 @@ dataloader_test = torch.utils.data.DataLoader(dataset_test)
 net = ControlledNetwork(
     layer_sizes,
     mode=mode,
-    leak=leak,
-    stdp_tau=stdp_tau,
+    tau_mem=tau_mem,
+    tau_stdp=tau_stdp,
     controller_rate=controller_rate,
     controller_precision=controller_precision,
 )
