@@ -153,5 +153,14 @@ class ControlledNetwork(pl.LightningModule):
         optim.zero_grad()
 
         ffw_mse = F.mse_loss(first_output, target)
-        self.log("ffw_mse", ffw_mse)
-        self.log("time_to_target", n_iter)
+        self.log("ffw_mse_train", ffw_mse)
+        self.log("iter_to_target", float(n_iter))
+
+    def validation_step(self, data, idx):
+        x, y = data
+        target = F.one_hot(y, num_classes=10).squeeze()
+        x = x.squeeze()
+
+        out = self.feedforward(x)
+        ffw_mse = F.mse_loss(out, target)
+        self.log("ffw_mse_val", ffw_mse)
