@@ -4,6 +4,7 @@ model:
     - 10
   tau_mem: 20.
   tau_stdp: 2.
+  alpha_stdp: 1.
   controller_rate: 0.1
   max_val_steps: 100
   max_train_steps: 100

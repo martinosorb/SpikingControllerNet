@@ -8,7 +8,16 @@ def spikify(rate):
 
 
 class ControlledLayer(torch.nn.Module):
-    def __init__(self, fan_in, fan_out, controller_dim, mode="spiking", tau_mem=10., tau_stdp=False):
+    def __init__(
+        self,
+        fan_in,
+        fan_out,
+        controller_dim,
+        mode="spiking",
+        tau_mem=10.,
+        tau_stdp=False,
+        alpha_stdp=1.0,  # ratio A+/A-
+    ):
         super().__init__()
 
         self.leak = 1. / tau_mem
@@ -26,6 +35,8 @@ class ControlledLayer(torch.nn.Module):
         if self.stdp_decay:
             self.Apre = torch.zeros(fan_in)
             self.Apost = torch.zeros(fan_out)
+            self.neg_stdp_amplitude = 2. / (1 + alpha_stdp)
+            self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude
 
     def forward(self, inputs, c):
         ff_input = self.ff(inputs)
@@ -43,7 +54,8 @@ class ControlledLayer(torch.nn.Module):
                 input_spikes, output_spikes = inputs, outputs
             self.Apre = self.Apre * self.stdp_decay + input_spikes.float()
             self.Apost = self.Apost * self.stdp_decay + output_spikes.float()
-            self.ff.weight.grad -= -torch.outer(input_spikes, self.Apost).T + torch.outer(output_spikes, self.Apre)
+            self.ff.weight.grad -= -self.neg_stdp_amplitude * torch.outer(input_spikes, self.Apost).T
+            self.ff.weight.grad -= +self.pos_stdp_amplitude * torch.outer(output_spikes, self.Apre)
 
         return outputs
 
@@ -73,6 +85,7 @@ class ControlledNetwork(pl.LightningModule):
         mode="spiking",
         tau_mem=10.,
         tau_stdp=False,
+        alpha_stdp=1.0,  # ratio A+/A-
     ):
         super().__init__()
 
@@ -82,8 +95,8 @@ class ControlledNetwork(pl.LightningModule):
 
         for fan_in, fan_out in zip(layers[:-1], layers[1:]):
             layer = ControlledLayer(
-                fan_in, fan_out, controller_dim=controller_dim,
-                mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp)
+                fan_in, fan_out, controller_dim=controller_dim, mode=mode,
+                tau_mem=tau_mem, tau_stdp=tau_stdp, alpha_stdp=alpha_stdp)
             self.layers.append(layer)
 
         self.initialize_as_dfc()
@@ -127,8 +140,10 @@ class DiffControllerNet(ControlledNetwork):
         controller_rate=0.1,
         controller_precision=0.01,
         target_rates=[0., 1.],
+        alpha_stdp=1.0,  # ratio A+/A-
     ):
-        super().__init__(layers=layers, mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp)
+        super().__init__(
+            layers=layers, mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp, alpha_stdp=alpha_stdp)
         self.controller_rate = controller_rate
         self.ctr_precision = controller_precision
         self.target_rates = torch.tensor(target_rates).float()
@@ -190,11 +205,13 @@ class EventControllerNet(ControlledNetwork):
         controller_rate=0.1,
         max_val_steps=10,
         max_train_steps=10,
-        positive_control=0.03
+        positive_control=0.03,
+        alpha_stdp=1.0,  # ratio A+/A-
     ):
         super().__init__(
             layers=layers, mode="spiking",
-            tau_mem=tau_mem, tau_stdp=tau_stdp)
+            tau_mem=tau_mem, tau_stdp=tau_stdp,
+            alpha_stdp=alpha_stdp)
 
         self.controller_rate = controller_rate
         self.max_val_steps = max_val_steps
