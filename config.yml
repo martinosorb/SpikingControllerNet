@@ -2,14 +2,12 @@ model:
   layers:
     - 784
     - 10
-  mode: "spiking"
-  tau_mem: 1.
-  tau_stdp: 2.54
+  tau_mem: 20.
+  tau_stdp: 2.
   controller_rate: 0.1
-  controller_precision: 0.01
-  target_rates:
-    - 0.0
-    - 1.0
+  max_val_steps: 100
+  max_train_steps: 100
+  positive_control: 0.03
 
 optimizer:
   class_path: torch.optim.SGD
