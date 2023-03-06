@@ -24,3 +24,4 @@ data:
 
 trainer:
   max_epochs: 1
+  val_check_interval: 5000

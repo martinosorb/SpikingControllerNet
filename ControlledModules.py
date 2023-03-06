@@ -89,6 +89,9 @@ class ControlledNetwork(pl.LightningModule):
         self.initialize_as_dfc()
         self.seq = torch.nn.Sequential(*self.layers)  # so that pytorch registers them
 
+    def evolve_controller(self, current_output, control_target_rate):
+        raise NotImplementedError()
+
     def initialize_as_dfc(self):
         # last layer has Q=identity
         curr_w = torch.eye(len(self.c))
@@ -173,17 +176,54 @@ class DiffControllerNet(ControlledNetwork):
         x = x.squeeze()
 
         out = self.feedforward(x)
-        ffw_mse = F.mse_loss(out, target)
-        self.log("ffw_mse_val", ffw_mse)
+        ffw_acc = torch.equal(out, target)
+        self.log("ffw_acc_val", ffw_acc)
 
 
-# class EventControllerNet(ControlledNetwork):
-#     def __init__(
-#         self,
-#         layers,
-#         tau_mem=10.,
-#         tau_stdp=False,
-#         # controller_rate=0.1,
-#         # controller_precision=0.01,
-#         # target_rates=[0., 1.],
-#     )
+class EventControllerNet(ControlledNetwork):
+    def __init__(
+        self,
+        layers,
+        tau_mem=10.,
+        tau_stdp=False,
+        controller_rate=0.1,
+        # controller_precision=0.01,
+        # target_rates=[0., 1.],
+    ):
+        super().__init__(
+            layers=layers, mode="spiking",
+            tau_mem=tau_mem, tau_stdp=tau_stdp)
+
+        self.controller_rate = controller_rate
+
+    def evolve_controller(self, current_output, one_hot_target):
+        # this is -1 when there is a spike and it's NOT on the target
+        suppressor = current_output * (one_hot_target - 1)
+        self.c += self.controller_rate * suppressor + 0.01
+
+    def training_step(self, data, idx):
+        optim = self.optimizers().optimizer
+
+        x, y = data
+        target = F.one_hot(y, num_classes=10).squeeze()
+        x = x.squeeze()
+        control_target_rate = self.target_rates[target]
+
+        # FORWARD, with controller controlling
+        first_output, n_iter = self.evolve_to_convergence(
+            x, target, control_target_rate)
+        optim.step()
+        optim.zero_grad()
+
+        ffw_mse = F.mse_loss(first_output, target)
+        self.log("ffw_mse_train", ffw_mse)
+        self.log("iter_to_target", float(n_iter))
+
+    def validation_step(self, data, idx):
+        x, y = data
+        target = F.one_hot(y, num_classes=10).squeeze()
+        x = x.squeeze()
+
+        out = self.feedforward(x)
+        ffw_acc = torch.equal(out, target)
+        self.log("ffw_acc_val", ffw_acc)
