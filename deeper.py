@@ -3,7 +3,7 @@ from torchvision.datasets import MNIST
 import torchvision.transforms as tr
 
 import matplotlib.pyplot as plt
-from ControlledLayer import ControlledNetwork
+from ControlledModules import ControlledNetwork
 from tqdm import tqdm
 import numpy as np
 

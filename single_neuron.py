@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 from utils import update_weights_rates
 from sklearn.datasets import make_blobs
-from ControlledLayer import ControlledNetwork
+from ControlledModules import ControlledNetwork
 from tqdm import tqdm
 import numpy as np
 

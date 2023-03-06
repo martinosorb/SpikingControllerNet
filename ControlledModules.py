@@ -72,15 +72,9 @@ class ControlledNetwork(pl.LightningModule):
         layers,
         mode="spiking",
         tau_mem=10.,
-        controller_rate=0.1,
         tau_stdp=False,
-        controller_precision=0.01,
-        target_rates=[0., 1.],
     ):
         super().__init__()
-        self.controller_rate = controller_rate
-        self.ctr_precision = controller_precision
-        self.target_rates = torch.tensor(target_rates).float()
 
         self.layers = []
         controller_dim = layers[-1]
@@ -111,6 +105,31 @@ class ControlledNetwork(pl.LightningModule):
     def feedforward(self, x):
         return self(x, torch.zeros_like(self.c))
 
+    def parameters(self, recurse: bool = True):
+        return (l.ff.weight for l in self.layers)
+
+    def reset(self):
+        self.c.zero_()
+        for layer in self.layers:
+            layer.reset()
+
+
+class DiffControllerNet(ControlledNetwork):
+    def __init__(
+        self,
+        layers,
+        mode="spiking",
+        tau_mem=10.,
+        tau_stdp=False,
+        controller_rate=0.1,
+        controller_precision=0.01,
+        target_rates=[0., 1.],
+    ):
+        super().__init__(layers=layers, mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp)
+        self.controller_rate = controller_rate
+        self.ctr_precision = controller_precision
+        self.target_rates = torch.tensor(target_rates).float()
+
     def evolve_controller(self, current_output, control_target_rate):
         error = control_target_rate - current_output
         self.c += self.controller_rate * error
@@ -129,14 +148,6 @@ class ControlledNetwork(pl.LightningModule):
                 break
 
         return first_output, n_iter
-
-    def parameters(self, recurse: bool = True):
-        return (l.ff.weight for l in self.layers)
-
-    def reset(self):
-        self.c.zero_()
-        for layer in self.layers:
-            layer.reset()
 
     def training_step(self, data, idx):
         optim = self.optimizers().optimizer
@@ -164,3 +175,15 @@ class ControlledNetwork(pl.LightningModule):
         out = self.feedforward(x)
         ffw_mse = F.mse_loss(out, target)
         self.log("ffw_mse_val", ffw_mse)
+
+
+# class EventControllerNet(ControlledNetwork):
+#     def __init__(
+#         self,
+#         layers,
+#         tau_mem=10.,
+#         tau_stdp=False,
+#         # controller_rate=0.1,
+#         # controller_precision=0.01,
+#         # target_rates=[0., 1.],
+#     )
