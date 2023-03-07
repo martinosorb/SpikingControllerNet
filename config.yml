@@ -5,10 +5,10 @@ model:
   tau_mem: 20.
   tau_stdp: 2.
   alpha_stdp: 1.
-  controller_rate: 0.1
+  controller_rate: 0.01
   max_val_steps: 100
   max_train_steps: 100
-  positive_control: 0.03
+  positive_control: 0.01
 
 optimizer:
   class_path: torch.optim.SGD

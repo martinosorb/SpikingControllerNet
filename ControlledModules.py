@@ -221,16 +221,25 @@ class EventControllerNet(ControlledNetwork):
     def evolve_controller(self, current_output, one_hot_target):
         # this is -1 when there is a spike and it's NOT on the target
         suppressor = current_output * (one_hot_target - 1)
-        self.c += self.controller_rate * suppressor + self.positive_control
+        self.c += self.controller_rate * suppressor + self.positive_control * one_hot_target
 
     def evolve_to_convergence(self, x, target):
         self.reset()
+        last_spike_on_target = False
 
         for n_iter in range(self.max_train_steps):
             output_rate = self(x.float(), self.c)
             self.evolve_controller(output_rate, target)
+            n_output_spikes = output_rate.sum()
+
+            if n_output_spikes == 0: continue
+
+            # controller stop condition
             if torch.equal(output_rate, target):
-                break
+                if last_spike_on_target: break
+                last_spike_on_target = True
+            else:
+                last_spike_on_target = False
 
         return n_iter
 
