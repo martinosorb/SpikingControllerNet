@@ -207,6 +207,7 @@ class EventControllerNet(ControlledNetwork):
         max_train_steps=10,
         positive_control=0.03,
         alpha_stdp=1.0,  # ratio A+/A-
+        min_spikes_on_target=2,
     ):
         super().__init__(
             layers=layers, mode="spiking",
@@ -217,6 +218,7 @@ class EventControllerNet(ControlledNetwork):
         self.max_val_steps = max_val_steps
         self.max_train_steps = max_train_steps
         self.positive_control = positive_control
+        self.min_spikes_on_target = min_spikes_on_target
 
     def evolve_controller(self, current_output, one_hot_target):
         # this is -1 when there is a spike and it's NOT on the target
@@ -225,7 +227,7 @@ class EventControllerNet(ControlledNetwork):
 
     def evolve_to_convergence(self, x, target, record=False):
         self.reset()
-        last_spike_on_target = False
+        spikes_on_target = 0
         outputs, contr = [], []
 
         for n_iter in range(self.max_train_steps):
@@ -240,10 +242,10 @@ class EventControllerNet(ControlledNetwork):
 
             # controller stop condition
             if torch.equal(output, target):
-                if last_spike_on_target: break
-                last_spike_on_target = True
+                if spikes_on_target >= self.min_spikes_on_target: break
+                spikes_on_target += 1
             else:
-                last_spike_on_target = False
+                spikes_on_target = 0
 
         if record:
             return outputs, contr

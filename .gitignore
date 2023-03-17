@@ -3,4 +3,4 @@ __pycache__
 plots/
 .vscode
 data
-lightning_logs
+lightning_logs*
