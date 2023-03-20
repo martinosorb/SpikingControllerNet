@@ -36,7 +36,7 @@ class ControlledLayer(torch.nn.Module):
             self.Apre = torch.zeros(fan_in)
             self.Apost = torch.zeros(fan_out)
             self.neg_stdp_amplitude = 2. / (1 + alpha_stdp) / tau_stdp
-            self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude / tau_stdp
+            self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude
 
     def forward(self, inputs, c):
         ff_input = self.ff(inputs)
