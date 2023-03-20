@@ -3,7 +3,7 @@ model:
     - 784
     - 10
   tau_mem: 20.
-  tau_stdp: 20.
+  tau_stdp: 2.
   alpha_stdp: 1.
   controller_rate: 0.1
   max_val_steps: 100
@@ -14,7 +14,7 @@ model:
 optimizer:
   class_path: torch.optim.SGD
   init_args:
-    lr: 0.001
+    lr: 0.002
     momentum: 0.1
     weight_decay: 1e-6
 
