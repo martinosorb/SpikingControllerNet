@@ -35,8 +35,8 @@ class ControlledLayer(torch.nn.Module):
         if self.stdp_decay:
             self.Apre = torch.zeros(fan_in)
             self.Apost = torch.zeros(fan_out)
-            self.neg_stdp_amplitude = 2. / (1 + alpha_stdp)
-            self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude
+            self.neg_stdp_amplitude = 2. / (1 + alpha_stdp) / tau_stdp
+            self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude / tau_stdp
 
     def forward(self, inputs, c):
         ff_input = self.ff(inputs)
@@ -248,7 +248,8 @@ class EventControllerNet(ControlledNetwork):
                 spikes_on_target = 0
 
         if record:
-            return outputs, contr
+            last_dw = -self.layers[-1].ff.weight.grad.clone().detach().numpy()
+            return outputs, contr, last_dw
         return n_iter
 
     def training_step(self, data, idx):
