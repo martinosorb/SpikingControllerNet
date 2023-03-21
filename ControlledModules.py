@@ -25,7 +25,6 @@ class ControlledLayer(torch.nn.Module):
         self.fan_out = fan_out
         self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
         self.fb = torch.nn.Linear(controller_dim, fan_out, bias=False)
-        self.reset()
 
         assert mode == "spiking" or mode == "rate"
         self.mode = mode
@@ -33,10 +32,12 @@ class ControlledLayer(torch.nn.Module):
 
         self.stdp_decay = 1 - 1 / tau_stdp if tau_stdp else False
         if self.stdp_decay:
-            self.Apre = torch.zeros(fan_in)
-            self.Apost = torch.zeros(fan_out)
+            self.Apre = torch.empty(fan_in)
+            self.Apost = torch.empty(fan_out)
             self.neg_stdp_amplitude = 2. / (1 + alpha_stdp) / tau_stdp
             self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude
+
+        self.reset()
 
     def forward(self, inputs, c):
         ff_input = self.ff(inputs)
@@ -69,6 +70,9 @@ class ControlledLayer(torch.nn.Module):
         return torch.sigmoid(self.v)
 
     def reset(self):
+        if self.stdp_decay:
+            self.Apre.zero_()
+            self.Apost.zero_()
         if self.ff.weight.grad is None:
             self.ff.weight.grad = torch.zeros_like(self.ff.weight)
         self.v = torch.zeros(self.fan_out)
@@ -235,7 +239,7 @@ class EventControllerNet(ControlledNetwork):
             self.evolve_controller(output, target)
             n_output_spikes = output.sum()
             if record:
-                outputs.append(output.numpy())
+                outputs.append(output.clone().numpy())
                 contr.append(self.c.clone().numpy())
 
             if n_output_spikes == 0: continue
