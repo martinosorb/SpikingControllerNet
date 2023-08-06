@@ -258,7 +258,7 @@ class EventControllerNet(ControlledNetwork):
 
     def training_step(self, data, idx):
         optim = self.optimizers().optimizer
-
+        optim.zero_grad()
         x, y = data
         target = F.one_hot(y, num_classes=10).squeeze()
         x = x.squeeze()
@@ -271,6 +271,7 @@ class EventControllerNet(ControlledNetwork):
         self.log("iter_to_target", float(n_iter))
 
     def validation_step(self, data, idx):
+        optim = self.optimizers().optimizer
         x, y = data
         target = F.one_hot(y, num_classes=10).squeeze()
         x = x.squeeze()
@@ -286,3 +287,4 @@ class EventControllerNet(ControlledNetwork):
 
         self.log("ttfs_acc_val", correct)
         self.log("val_latency", i)
+        optim.zero_grad()
