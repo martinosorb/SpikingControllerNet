@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import numpy as np
 
 
 def spikify(rate):
@@ -264,25 +265,23 @@ class EventControllerNet(ControlledNetwork):
         target = F.one_hot(y, num_classes=10)
         x = x.float()
         target = target.float()
-        # TTFS evaluation
-        self.reset()
-        active_idx = torch.ones(self.batch_size, dtype=bool)
-        correct_idx = torch.zeros(self.batch_size, dtype=bool)
-        latency = 0.0
-        for i in range(self.max_val_steps):
-            out = self.feedforward(x)
-            nonzero_idx = out.sum(dim=1) > 0
-            active_now = active_idx & nonzero_idx
-            equal_idx = torch.all(out == target, dim=1)
-            correct_now = (~correct_idx) & active_now & equal_idx
-            correct_idx = correct_idx | correct_now
-            latency += active_now.sum() * i
-            active_idx = active_idx & ~nonzero_idx
-            if torch.all(~active_idx):
-                break
 
-        latency += (self.max_val_steps - 1) * active_idx.sum().item()
-        latency /= self.batch_size
-        self.log("ttfs_acc_val", float(correct_idx.detach().cpu().numpy().mean()))
+        self.reset()
+        spikes = []
+        for i in range(self.max_val_steps):
+            out = self.feedforward(x).detach().cpu().numpy()
+            spikes.append(out)
+
+        spikes = np.array(spikes)
+        rates = spikes.mean(axis=0)
+        out_ids = np.argmax(rates, axis=-1)
+        correct = float((out_ids == y.detach().cpu().numpy()).mean())
+        
+        counts = spikes.sum(axis=-1)
+        counts = np.concatenate((counts, np.ones((1, self.batch_size))))
+        latency = np.mean([ np.argwhere(bi).min() for bi in (np.concatenate((counts, np.ones((1, self.batch_size)))) > 0).T ])
+
+        self.log("acc_val", correct)
         self.log("val_latency", latency)
+    
         optim.zero_grad()
