@@ -2,7 +2,7 @@
 # pytorch_lightning==2.0.2
 seed_everything: true
 trainer:
-  accelerator: cpu
+  accelerator: cuda
   strategy: auto
   devices: auto
   num_nodes: 1
@@ -20,7 +20,7 @@ trainer:
   limit_test_batches: null
   limit_predict_batches: null
   overfit_batches: 0.0
-  val_check_interval: 5
+  val_check_interval: 18
   check_val_every_n_epoch: 1
   num_sanity_val_steps: null
   log_every_n_steps: 1
@@ -41,6 +41,12 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 1
   default_root_dir: null
+  logger: 
+    class_path: CSVLogger
+    init_args:
+      save_dir: "lightning_logs"
+      name: "lightning_logs"
+      flush_logs_every_n_steps: 1
 model:
   layers:
   - 784
@@ -53,15 +59,18 @@ model:
   max_train_steps: 100
   positive_control: 0.1
   alpha_stdp: 1.0
-  batch_size: 100
+  batch_size: 1000
 data:
   data_dir: data/
-  batch_size: 100
+  batch_size: 1000
 ckpt_path: null
 optimizer:
   class_path: torch.optim.Adam
   init_args:
-    lr: 5e-3
+    betas:
+      - 0.8
+      - 0.8
+    lr: 3e-3
     maximize: false
     foreach: null
     differentiable: false
