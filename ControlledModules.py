@@ -101,6 +101,7 @@ class ControlledNetwork(pl.LightningModule):
         alpha_stdp=1.0,  # ratio A+/A-
     ):
         super().__init__()
+        self.automatic_optimization = False
 
         self.layers = []
         self.batch_size = batch_size

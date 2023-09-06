@@ -39,7 +39,7 @@ trainer:
   barebones: false
   plugins: null
   sync_batchnorm: false
-  reload_dataloaders_every_n_epochs: 0
+  reload_dataloaders_every_n_epochs: 1
   default_root_dir: null
 model:
   layers:
