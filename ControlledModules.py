@@ -26,7 +26,7 @@ class ControlledLayer(torch.nn.Module):
         self.threshold = 1.
         self.fan_out = fan_out
         self.batch_size = batch_size
-        self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
+        self.ff = torch.nn.Linear(fan_in + 1, fan_out, bias=False)
         self.fb = torch.nn.Linear(controller_dim, fan_out, bias=False)
 
         assert mode == "spiking" or mode == "rate"
@@ -35,7 +35,7 @@ class ControlledLayer(torch.nn.Module):
 
         self.stdp_decay = 1 - 1 / tau_stdp if tau_stdp else False
         if self.stdp_decay:
-            self.Apre = torch.empty(batch_size, fan_in)
+            self.Apre = torch.empty(batch_size, fan_in + 1)
             self.Apost = torch.empty(batch_size, fan_out)
             self.neg_stdp_amplitude = 2. / (1 + alpha_stdp) / tau_stdp
             self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude
@@ -43,6 +43,9 @@ class ControlledLayer(torch.nn.Module):
         self.reset()
 
     def forward(self, inputs, c):
+        # Add all-ones column to emulate layer biases
+        inputs = torch.cat((inputs, torch.ones((*inputs.shape[:-1], 1))), dim=-1)
+
         ff_input = self.ff(inputs)
         fb_input = self.fb(c)
 
@@ -123,7 +126,7 @@ class ControlledNetwork(pl.LightningModule):
         with torch.no_grad():
             for layer in self.layers[::-1]:  # layers backwards
                 layer.fb.weight.data = curr_w
-                curr_w = layer.ff.weight.T @ curr_w
+                curr_w = layer.ff.weight.T[:-1] @ curr_w
 
     def forward(self, x, c):
         for layer in self.layers:
