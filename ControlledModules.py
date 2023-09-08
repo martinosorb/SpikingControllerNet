@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import numpy as np
 
 
 def spikify(rate):
@@ -25,7 +26,7 @@ class ControlledLayer(torch.nn.Module):
         self.threshold = 1.
         self.fan_out = fan_out
         self.batch_size = batch_size
-        self.ff = torch.nn.Linear(fan_in, fan_out, bias=False)
+        self.ff = torch.nn.Linear(fan_in + 1, fan_out, bias=False)
         self.fb = torch.nn.Linear(controller_dim, fan_out, bias=False)
 
         assert mode == "spiking" or mode == "rate"
@@ -34,19 +35,31 @@ class ControlledLayer(torch.nn.Module):
 
         self.stdp_decay = 1 - 1 / tau_stdp if tau_stdp else False
         if self.stdp_decay:
-            self.Apre = torch.empty(batch_size, fan_in)
-            self.Apost = torch.empty(batch_size, fan_out)
+            self.Apre = torch.nn.Parameter(torch.empty(batch_size, fan_in + 1), requires_grad=False)
+            self.Apost = torch.nn.Parameter(torch.empty(batch_size, fan_out), requires_grad=False)
             self.neg_stdp_amplitude = 2. / (1 + alpha_stdp) / tau_stdp
             self.pos_stdp_amplitude = alpha_stdp * self.neg_stdp_amplitude
-
+        self.v = torch.nn.Parameter(
+            torch.zeros((self.batch_size, self.fan_out)),
+            requires_grad=False,
+        )
         self.reset()
 
     def forward(self, inputs, c):
+        # Add all-ones column to emulate layer biases
+        inputs = torch.cat(
+            (
+                inputs,
+                torch.ones((*inputs.shape[:-1], 1), device=inputs.device),
+            ),
+            dim=-1,
+        )
+
         ff_input = self.ff(inputs)
         fb_input = self.fb(c)
 
         # LIF dynamics
-        self.v += -self.leak * self.v + ff_input + fb_input
+        self.v.data[:] += -self.leak * self.v + ff_input + fb_input
         outputs = self.dynamics()
 
         if self.stdp_decay:
@@ -55,12 +68,12 @@ class ControlledLayer(torch.nn.Module):
                 output_spikes = spikify(outputs)
             else:
                 input_spikes, output_spikes = inputs, outputs
-            self.Apre = self.Apre * self.stdp_decay + input_spikes.float()
-            self.Apost = self.Apost * self.stdp_decay + output_spikes.float()
+            self.Apre.data[:] = self.Apre * self.stdp_decay + input_spikes.float()
+            self.Apost.data[:] = self.Apost * self.stdp_decay + output_spikes.float()
             neg_outer = torch.einsum("bi,bj->bij", (input_spikes, self.Apost)).transpose(1, 2).mean(dim=0)
             pos_outer = torch.einsum("bi,bj->bij", (output_spikes, self.Apre)).mean(dim=0)
             update = self.pos_stdp_amplitude * pos_outer - self.neg_stdp_amplitude * neg_outer
-            self.ff.weight.grad = self.ff.weight.grad - update
+            self.ff.weight.grad[:] = self.ff.weight.grad - update
 
         return outputs
 
@@ -78,8 +91,8 @@ class ControlledLayer(torch.nn.Module):
             self.Apre.zero_()
             self.Apost.zero_()
         if self.ff.weight.grad is None:
-            self.ff.weight.grad = torch.zeros_like(self.ff.weight)
-        self.v = torch.zeros((self.batch_size, self.fan_out))
+            self.ff.weight.grad = torch.zeros_like(self.ff.weight, device=self.ff.weight.device)
+        self.v.zero_()
 
     @property
     def grad(self):
@@ -97,12 +110,13 @@ class ControlledNetwork(pl.LightningModule):
         alpha_stdp=1.0,  # ratio A+/A-
     ):
         super().__init__()
+        self.automatic_optimization = False
 
         self.layers = []
         self.batch_size = batch_size
         controller_dim = layers[-1]
         self.controller_dim = controller_dim
-        self.c = torch.zeros((batch_size, controller_dim))
+        self.c = torch.nn.Parameter(torch.zeros((batch_size, controller_dim)), requires_grad=False)
 
         for fan_in, fan_out in zip(layers[:-1], layers[1:]):
             layer = ControlledLayer(
@@ -118,11 +132,11 @@ class ControlledNetwork(pl.LightningModule):
 
     def initialize_as_dfc(self):
         # last layer has Q=identity
-        curr_w = torch.eye(self.controller_dim)
+        curr_w = torch.eye(self.controller_dim, device=self.c.device)
         with torch.no_grad():
             for layer in self.layers[::-1]:  # layers backwards
                 layer.fb.weight.data = curr_w
-                curr_w = layer.ff.weight.T @ curr_w
+                curr_w = layer.ff.weight.T[:-1] @ curr_w
 
     def forward(self, x, c):
         for layer in self.layers:
@@ -230,16 +244,17 @@ class EventControllerNet(ControlledNetwork):
         self.max_train_steps = max_train_steps
         self.positive_control = positive_control
 
-    def evolve_controller(self, current_output, one_hot_target):
+    def evolve_controller(self, current_output, one_hot_target, i):
         # this is -1 when there is a spike and it's NOT on the target
         suppressor = current_output * (one_hot_target - 1)
-        self.c += self.controller_rate * suppressor + self.positive_control * one_hot_target
+        update = self.controller_rate * suppressor + self.positive_control * one_hot_target
+        self.c.data[:] += (0.97**i) * update
 
     def evolve_to_convergence(self, x, target):
         self.reset()
         for n_iter in range(self.max_train_steps):
             output = self(x, self.c)
-            self.evolve_controller(output, target)
+            self.evolve_controller(output, target, n_iter)
 
         return n_iter
 
@@ -264,25 +279,23 @@ class EventControllerNet(ControlledNetwork):
         target = F.one_hot(y, num_classes=10)
         x = x.float()
         target = target.float()
-        # TTFS evaluation
-        self.reset()
-        active_idx = torch.ones(self.batch_size, dtype=bool)
-        correct_idx = torch.zeros(self.batch_size, dtype=bool)
-        latency = 0.0
-        for i in range(self.max_val_steps):
-            out = self.feedforward(x)
-            nonzero_idx = out.sum(dim=1) > 0
-            active_now = active_idx & nonzero_idx
-            equal_idx = torch.all(out == target, dim=1)
-            correct_now = (~correct_idx) & active_now & equal_idx
-            correct_idx = correct_idx | correct_now
-            latency += active_now.sum() * i
-            active_idx = active_idx & ~nonzero_idx
-            if torch.all(~active_idx):
-                break
 
-        latency += (self.max_val_steps - 1) * active_idx.sum().item()
-        latency /= self.batch_size
-        self.log("ttfs_acc_val", float(correct_idx.detach().cpu().numpy().mean()))
+        self.reset()
+        spikes = []
+        for i in range(self.max_val_steps):
+            out = self.feedforward(x).detach().cpu().numpy()
+            spikes.append(out)
+
+        spikes = np.array(spikes)
+        rates = spikes.mean(axis=0)
+        out_ids = np.argmax(rates, axis=-1)
+        correct = float((out_ids == y.detach().cpu().numpy()).mean())
+        
+        counts = spikes.sum(axis=-1)
+        counts = np.concatenate((counts, np.ones((1, self.batch_size))))
+        latency = np.mean([ np.argwhere(bi).min() for bi in (np.concatenate((counts, np.ones((1, self.batch_size)))) > 0).T ])
+
+        self.log("acc_val", correct)
         self.log("val_latency", latency)
+    
         optim.zero_grad()
