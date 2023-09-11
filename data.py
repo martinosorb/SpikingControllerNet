@@ -55,21 +55,29 @@ class N_MNISTDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = 8
 
-    @staticmethod
-    def transform(x):
-        # initial order is xytp
-        print(x.shape)
-        x = x.moveaxis(2, 0)
-        print(x.shape)
-        x = torch.flatten(x, start_dim=1)
-        print(x.shape)
-        return tr.ToTensor()(x)
+    # @staticmethod
+    # def transform_frames(x):
+    #     # frames are TPHW
+    #     print(x.shape)
+    #     x = torch.tensor(x)
+    #     x = torch.moveaxis(x, 2, 0)
+    #     print(x.shape)
+    #     x = torch.flatten(x, start_dim=1)
+    #     print(x.shape)
+    #     raise
+    #     return x
 
     def setup(self, stage: str):
         from tonic.datasets import NMNIST
+        from tonic.transforms import ToFrame
 
-        self.nmnist_test = NMNIST(self.data_dir, train=False, transform=self.transform, download=True)
-        nmnist_full = NMNIST(self.data_dir, train=True, transform=self.transform, download=True)
+        # This leads to 32 time bins. For NMNIST, this will mean ~10 ms per bin.
+        # Sensor size is 34 and 2 polarities: size is 34*34*2=2312
+        to_frame = ToFrame(sensor_size=NMNIST.sensor_size, n_time_bins=32)
+        transform = tr.Compose([to_frame, torch.tensor, torch.nn.Flatten(start_dim=1)])
+
+        self.nmnist_test = NMNIST(self.data_dir, train=False, transform=transform)
+        nmnist_full = NMNIST(self.data_dir, train=True, transform=transform)
         self.nmnist_train, self.nmnist_val = random_split(nmnist_full, [.9, .1])
 
     def train_dataloader(self):
