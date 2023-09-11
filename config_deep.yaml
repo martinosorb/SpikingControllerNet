@@ -64,7 +64,7 @@ data:
   class_path: data.MNISTDataModule
   init_args:
     data_dir: data/
-    batch_size: 100
+    batch_size: 1000
 ckpt_path: null
 optimizer:
   class_path: torch.optim.Adam
