@@ -253,7 +253,7 @@ class EventControllerNet(ControlledNetwork):
     def evolve_to_convergence(self, x, target):
         self.reset()
         for n_iter in range(self.max_train_steps):
-            output = self(x, self.c)
+            output = self(x[:, n_iter], self.c)
             self.evolve_controller(output, target, n_iter)
 
         return n_iter
@@ -261,11 +261,13 @@ class EventControllerNet(ControlledNetwork):
     def training_step(self, data, idx):
         optim = self.optimizers().optimizer
         optim.zero_grad()
+
         x, y = data
         target = F.one_hot(y, num_classes=10)
-
         x = x.float()
+        x = self.ensure_time_dim(x, self.max_train_steps)
         target = target.float()
+
         # FORWARD, with controller controlling
         n_iter = self.evolve_to_convergence(x, target)
         optim.step()
@@ -275,27 +277,40 @@ class EventControllerNet(ControlledNetwork):
 
     def validation_step(self, data, idx):
         optim = self.optimizers().optimizer
+
         x, y = data
         target = F.one_hot(y, num_classes=10)
         x = x.float()
+        x = self.ensure_time_dim(x, self.max_val_steps)
         target = target.float()
 
         self.reset()
         spikes = []
         for i in range(self.max_val_steps):
-            out = self.feedforward(x).detach().cpu().numpy()
+            out = self.feedforward(x[:, i]).detach().cpu().numpy()
             spikes.append(out)
 
         spikes = np.array(spikes)
         rates = spikes.mean(axis=0)
         out_ids = np.argmax(rates, axis=-1)
         correct = float((out_ids == y.detach().cpu().numpy()).mean())
-        
+
         counts = spikes.sum(axis=-1)
-        counts = np.concatenate((counts, np.ones((1, self.batch_size))))
-        latency = np.mean([ np.argwhere(bi).min() for bi in (np.concatenate((counts, np.ones((1, self.batch_size)))) > 0).T ])
+        latency = np.mean([
+            np.argwhere(bi).min() for bi in (
+                np.concatenate((counts, np.ones((1, self.batch_size)))) > 0
+            ).T])
 
         self.log("acc_val", correct)
         self.log("val_latency", latency)
-    
+
         optim.zero_grad()
+
+    @staticmethod
+    def ensure_time_dim(x, tottime):
+        if x.dim() == 2:
+            return x.unsqueeze(1).expand((-1, tottime, -1))
+        elif x.dim() == 3:
+            return x
+        else:
+            raise ValueError("Anomalous number of input dimensions")
