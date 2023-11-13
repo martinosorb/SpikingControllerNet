@@ -41,12 +41,12 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 1
   default_root_dir: null
-  logger: 
-    class_path: CSVLogger
-    init_args:
-      save_dir: "lightning_logs"
-      name: "lightning_logs"
-      flush_logs_every_n_steps: 1
+  # logger: 
+  #   class_path: CSVLogger
+  #   init_args:
+  #     save_dir: "lightning_logs"
+  #     name: "lightning_logs"
+  #     flush_logs_every_n_steps: 1
 model:
   layers:
   - 784
