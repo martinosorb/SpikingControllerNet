@@ -248,7 +248,6 @@ class EventControllerNet(ControlledNetwork):
         # this is -1 when there is a spike and it's NOT on the target
         suppressor = current_output * (one_hot_target - 1)
         update = self.controller_rate * suppressor + self.positive_control * one_hot_target
-        self.c.data[:] += (0.97**i) * update
 
     def evolve_to_convergence(self, x, target):
         self.reset()

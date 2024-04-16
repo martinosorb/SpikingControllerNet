@@ -68,9 +68,9 @@ optimizer:
   class_path: torch.optim.Adam
   init_args:
     betas:
-      - 0.8
-      - 0.8
-    lr: 3e-3
+      - 0.9
+      - 0.9
+    lr: 1e-3
     maximize: false
     foreach: null
     differentiable: false
