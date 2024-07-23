@@ -1,7 +1,13 @@
 model:
   layers:
     - 784
+    - 50
+    - 50
     - 10
+  residual_connections:
+    - False
+    - True
+    - False
   tau_mem: 20.
   tau_stdp: 10.
   alpha_stdp: 1.

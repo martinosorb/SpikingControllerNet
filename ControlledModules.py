@@ -108,9 +108,16 @@ class ControlledNetwork(pl.LightningModule):
         tau_mem=10.,
         tau_stdp=False,
         alpha_stdp=1.0,  # ratio A+/A-
+        residual_connections = None,
     ):
         super().__init__()
         self.automatic_optimization = False
+
+        if residual_connections is None:
+            residual_connections = [False for _ in range(len(layers) - 1)]
+        
+        self.residual_connections = residual_connections
+        self.original_layers = layers
 
         self.layers = []
         self.batch_size = batch_size
@@ -134,13 +141,19 @@ class ControlledNetwork(pl.LightningModule):
         # last layer has Q=identity
         curr_w = torch.eye(self.controller_dim, device=self.c.device)
         with torch.no_grad():
-            for layer in self.layers[::-1]:  # layers backwards
+            for layer, res, size in zip(self.layers[::-1], self.residual_connections[::-1], self.original_layers[1:][::-1]):
                 layer.fb.weight.data = curr_w
-                curr_w = layer.ff.weight.T[:-1] @ curr_w
+                if res:
+                    curr_w = (layer.ff.weight.T[:-1] + torch.eye(size, device=self.c.device)) @ curr_w
+                else:
+                    curr_w = layer.ff.weight.T[:-1] @ curr_w
 
     def forward(self, x, c):
-        for layer in self.layers:
-            x = layer(x, c)
+        for layer, res in zip(self.layers, self.residual_connections):
+            if res:
+                x += layer(x, c)
+            else:
+                x = layer(x, c)
         return x
 
     def feedforward(self, x):
@@ -166,9 +179,12 @@ class DiffControllerNet(ControlledNetwork):
         controller_precision=0.01,
         target_rates=[0., 1.],
         alpha_stdp=1.0,  # ratio A+/A-
+        residual_connections = None,
     ):
         super().__init__(
-            layers=layers, mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp, alpha_stdp=alpha_stdp)
+            layers=layers, mode=mode, tau_mem=tau_mem, tau_stdp=tau_stdp,
+            alpha_stdp=alpha_stdp, residual_connections=residual_connections)
+        
         self.controller_rate = controller_rate
         self.ctr_precision = controller_precision
         self.target_rates = torch.tensor(target_rates).float()
@@ -204,6 +220,8 @@ class DiffControllerNet(ControlledNetwork):
         first_output, n_iter = self.evolve_to_convergence(
             x, target, control_target_rate)
         optim.step()
+        self.initialize_as_dfc()
+
         optim.zero_grad()
 
         ffw_mse = F.mse_loss(first_output, target)
@@ -233,11 +251,12 @@ class EventControllerNet(ControlledNetwork):
         max_train_steps=10,
         positive_control=0.03,
         alpha_stdp=1.0,  # ratio A+/A-
+        residual_connections = None,
     ):
         super().__init__(
             layers=layers, batch_size=batch_size, mode="spiking",
-            tau_mem=tau_mem, tau_stdp=tau_stdp,
-            alpha_stdp=alpha_stdp)
+            tau_mem=tau_mem, tau_stdp=tau_stdp, alpha_stdp=alpha_stdp,
+            residual_connections=residual_connections)
 
         self.controller_rate = controller_rate
         self.max_val_steps = max_val_steps
@@ -269,6 +288,7 @@ class EventControllerNet(ControlledNetwork):
         # FORWARD, with controller controlling
         n_iter = self.evolve_to_convergence(x, target)
         optim.step()
+        self.initialize_as_dfc()
 
         self.log("iter_to_target", n_iter)
         optim.zero_grad()
